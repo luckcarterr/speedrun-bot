@@ -39,13 +39,13 @@ def heist_coefficient(median_seconds: float) -> float:
     elif median_seconds < 60:
         return 2.25
     elif median_seconds < 120:
-        return 2
-    elif median_seconds < 180:
+        return 2.0
+    elif median_seconds < 240:
         return 1.75
     elif median_seconds < 300:
         return 1.5
     elif median_seconds < 600:
-        return 1
+        return 1.0
     else:
         return 0.75
  
@@ -115,14 +115,6 @@ async def evaluate(
     rank: app_commands.Range[int, 1],
     show_breakdown: bool = True,
 ):
-    # Role check
-    allowed_role = "Evaluator"
-    if not any(role.name == allowed_role for role in interaction.user.roles):
-        await interaction.response.send_message(
-            f"⛔ You need the **{allowed_role}** role to use this command.", ephemeral=True
-        )
-        return
- 
     try:
         t = parse_time(player_time)
         z = parse_time(median_time)
