@@ -81,6 +81,8 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
     rank_factor = (1 / (rank ** (1 / 1.5))) * 1.2
  
     score = coeff * performance_value * rank_factor
+    if t > 1800:
+        score *= 1.5
  
     return {
         "score": score,
