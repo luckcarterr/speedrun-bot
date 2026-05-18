@@ -103,8 +103,8 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
 @app_commands.describe(
     player_time   = "Your run time (e.g. 1:23.45 or 83.45)",
     median_time   = "Median benchmark time for this heist (same format)",
-    gap_above     = "Time difference between you and the rank above (seconds or mm:ss)",
-    gap_below     = "Time difference between you and the rank below (seconds or mm:ss)",
+    time_above    = "Time difference between you and the rank above (seconds or mm:ss)",
+    time_below    = "Time difference between you and the rank below (seconds or mm:ss)",
     rank          = "Your placement on the leaderboard (1 = first place)",
     show_breakdown= "Show the full calculation breakdown (default: True)",
 )
@@ -112,16 +112,16 @@ async def evaluate(
     interaction: discord.Interaction,
     player_time: str,
     median_time: str,
-    gap_above: str,
-    gap_below: str,
+    time_above: str,
+    time_below: str,
     rank: app_commands.Range[int, 1],
     show_breakdown: bool = True,
 ):
     try:
         t = parse_time(player_time)
         z = parse_time(median_time)
-        x = parse_time(gap_above)
-        y = parse_time(gap_below)
+        x = parse_time(time_above)
+        y = parse_time(time_below)
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ **Input error:** {e}", ephemeral=True)
         return
