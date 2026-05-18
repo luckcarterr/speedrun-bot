@@ -37,17 +37,17 @@ def heist_coefficient(median_seconds: float) -> float:
     elif median_seconds < 30:
         return 2.5
     elif median_seconds < 60:
-        return 2.0
+        return 2.25
     elif median_seconds < 120:
-        return 1.5
+        return 2
     elif median_seconds < 180:
-        return 1.25
+        return 1.75
     elif median_seconds < 300:
-        return 1.0
+        return 1.5
     elif median_seconds < 600:
-        return 0.85
+        return 1
     else:
-        return 0.7
+        return 0.75
  
  
 def format_seconds(seconds: float) -> str:
