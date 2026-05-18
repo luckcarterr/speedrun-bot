@@ -33,15 +33,15 @@ def parse_time(time_str: str) -> float:
 def heist_coefficient(median_seconds: float) -> float:
     """Return the HeistCoefficient based on the median run time."""
     if median_seconds < 15:
-        return 2.25
-    elif median_seconds < 30:
-        return 2.1
-    elif median_seconds < 60:
         return 2.0
-    elif median_seconds < 120:
+    elif median_seconds < 30:
         return 1.85
+    elif median_seconds < 60:
+        return 1.75
+    elif median_seconds < 120:
+        return 1.65
     elif median_seconds < 180:
-        return 1.7
+        return 1.57
     elif median_seconds < 300:
         return 1.5
     elif median_seconds < 600:
