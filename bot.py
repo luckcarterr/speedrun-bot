@@ -78,7 +78,7 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
     time_component = 100 * ((z - t) / z)
     gap_component  = 75 * ((y - x) / (x + y)) if (x + y) != 0 else 0.0
     performance_value = time_component + gap_component
-    rank_factor = 1 / (rank ** (1 / 2.5))
+    rank_factor = (1 / (rank ** (1 / 1.5))) * 1.2
  
     score = coeff * performance_value * rank_factor
  
