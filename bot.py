@@ -64,12 +64,13 @@ def format_seconds(seconds: float) -> str:
         return f"{s:.2f}s"
  
  
-def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> dict:
+def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int, timegate_multiplier: float = 1.0, timegate_addition: float = 0.0) -> dict:
     """
     Final Evaluation Score =
         HeistCoefficient
         * [{100 * ((z - t) / z)} + {75 * ((y - x) / (x + y))}]
         * (1 / sqrt(rank))
+        * timegate_multiplier + timegate_addition
  
     Returns a dict with all intermediate values for transparency.
     """
@@ -84,6 +85,8 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
     if t > 1800:
         score *= 1.5
  
+    score = score * timegate_multiplier + timegate_addition
+ 
     return {
         "score": score,
         "coeff": coeff,
@@ -91,6 +94,8 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
         "time_component": time_component,
         "gap_component": gap_component,
         "rank_factor": rank_factor,
+        "timegate_multiplier": timegate_multiplier,
+        "timegate_addition": timegate_addition,
     }
  
  
@@ -101,12 +106,14 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
     description="Calculate the Final Evaluation Score for a speedrun."
 )
 @app_commands.describe(
-    player_time   = "Your run time (e.g. 1:23.45 or 83.45)",
-    median_time   = "Median benchmark time for this heist (same format)",
-    time_above    = "Time difference between you and the rank above (seconds or mm:ss)",
-    time_below    = "Time difference between you and the rank below (seconds or mm:ss)",
-    rank          = "Your placement on the leaderboard (1 = first place)",
-    show_breakdown= "Show the full calculation breakdown (default: True)",
+    player_time          = "Your run time (e.g. 1:23.45 or 83.45)",
+    median_time          = "Median benchmark time for this heist (same format)",
+    time_above           = "Time difference between you and the rank above (seconds or mm:ss)",
+    time_below           = "Time difference between you and the rank below (seconds or mm:ss)",
+    rank                 = "Your placement on the leaderboard (1 = first place)",
+    timegate_multiplier  = "Timegate multiplier applied to final score (default: 1.0)",
+    timegate_addition    = "Timegate addition applied after multiplier (default: 0.0)",
+    show_breakdown       = "Show the full calculation breakdown (default: True)",
 )
 async def evaluate(
     interaction: discord.Interaction,
@@ -115,6 +122,8 @@ async def evaluate(
     time_above: str,
     time_below: str,
     rank: app_commands.Range[int, 1],
+    timegate_multiplier: float = 1.0,
+    timegate_addition: float = 0.0,
     show_breakdown: bool = True,
 ):
     try:
@@ -132,7 +141,7 @@ async def evaluate(
         )
         return
  
-    result = calculate_evaluation(t, z, x, y, rank)
+    result = calculate_evaluation(t, z, x, y, rank, timegate_multiplier, timegate_addition)
  
     embed = discord.Embed(
         title="🏆 Final Evaluation Score",
@@ -146,8 +155,8 @@ async def evaluate(
             value=(
                 f"**Player time:** {format_seconds(t)}\n"
                 f"**Median (z):** {format_seconds(z)}\n"
-                f"**Gap above (x):** {format_seconds(x)}\n"
-                f"**Gap below (y):** {format_seconds(y)}\n"
+                f"**Time above (x):** {format_seconds(x)}\n"
+                f"**Time below (y):** {format_seconds(y)}\n"
                 f"**Rank:** #{rank}"
             ),
             inline=False,
@@ -159,12 +168,14 @@ async def evaluate(
                 f"**Time component** `100×((z−t)/z)`: {result['time_component']:.4f}\n"
                 f"**Gap component** `75×((y−x)/(x+y))`: {result['gap_component']:.4f}\n"
                 f"**Performance Value:** {result['performance_value']:.4f}\n"
-                f"**Rank factor** `1/√rank`: {result['rank_factor']:.4f}"
+                f"**Rank factor:** {result['rank_factor']:.4f}\n"
+                + (f"**Timegate multiplier:** {result['timegate_multiplier']}×\n" if timegate_multiplier != 1.0 else "")
+                + (f"**Timegate addition:** +{result['timegate_addition']}" if timegate_addition != 0.0 else "")
             ),
             inline=False,
         )
  
-    embed.set_footer(text="Formula: HeistCoeff × PerformanceValue × (1/√rank)")
+    embed.set_footer(text="Formula: HeistCoeff × PerformanceValue × RankFactor × TimegateMultiplier + TimegateAddition")
     await interaction.response.send_message(embed=embed)
  
  
