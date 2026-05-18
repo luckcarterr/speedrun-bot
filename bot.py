@@ -1,15 +1,15 @@
 import discord
 from discord import app_commands
 import math
-
+ 
 # ── Bot setup ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-
-
+ 
+ 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
+ 
 def parse_time(time_str: str) -> float:
     """
     Convert a time string to total seconds.
@@ -28,18 +28,18 @@ def parse_time(time_str: str) -> float:
             raise ValueError
     except ValueError:
         raise ValueError(f"Cannot parse time '{time_str}'. Use ss, mm:ss, or hh:mm:ss.")
-
-
+ 
+ 
 def heist_coefficient(median_seconds: float) -> float:
     """Return the HeistCoefficient based on the median run time."""
     if median_seconds < 15:
-        return 5.0
-    elif median_seconds < 30:
-        return 4.0
-    elif median_seconds < 60:
         return 3.0
+    elif median_seconds < 30:
+        return 2.5
+    elif median_seconds < 60:
+        return 2.0
     elif median_seconds < 120:
-        return 1.75
+        return 1.5
     elif median_seconds < 180:
         return 1.25
     elif median_seconds < 300:
@@ -48,8 +48,8 @@ def heist_coefficient(median_seconds: float) -> float:
         return 0.85
     else:
         return 0.7
-
-
+ 
+ 
 def format_seconds(seconds: float) -> str:
     """Format seconds back to a human-readable string."""
     seconds = abs(seconds)
@@ -62,26 +62,26 @@ def format_seconds(seconds: float) -> str:
         return f"{m}m {s:.2f}s"
     else:
         return f"{s:.2f}s"
-
-
+ 
+ 
 def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> dict:
     """
     Final Evaluation Score =
         HeistCoefficient
         * [{100 * ((z - t) / z)} + {75 * ((y - x) / (x + y))}]
         * (1 / sqrt(rank))
-
+ 
     Returns a dict with all intermediate values for transparency.
     """
     coeff = heist_coefficient(z)
-
+ 
     time_component = 100 * ((z - t) / z)
     gap_component  = 75 * ((y - x) / (x + y)) if (x + y) != 0 else 0.0
     performance_value = time_component + gap_component
     rank_factor = 1 / math.sqrt(rank)
-
+ 
     score = coeff * performance_value * rank_factor
-
+ 
     return {
         "score": score,
         "coeff": coeff,
@@ -90,10 +90,10 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int) -> d
         "gap_component": gap_component,
         "rank_factor": rank_factor,
     }
-
-
+ 
+ 
 # ── Slash command ─────────────────────────────────────────────────────────────
-
+ 
 @tree.command(
     name="evaluate",
     description="Calculate the Final Evaluation Score for a speedrun."
@@ -115,6 +115,14 @@ async def evaluate(
     rank: app_commands.Range[int, 1],
     show_breakdown: bool = True,
 ):
+    # Role check
+    allowed_role = "Evaluator"
+    if not any(role.name == allowed_role for role in interaction.user.roles):
+        await interaction.response.send_message(
+            f"⛔ You need the **{allowed_role}** role to use this command.", ephemeral=True
+        )
+        return
+ 
     try:
         t = parse_time(player_time)
         z = parse_time(median_time)
@@ -123,21 +131,21 @@ async def evaluate(
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ **Input error:** {e}", ephemeral=True)
         return
-
+ 
     if z == 0:
         await interaction.response.send_message(
             "⚠️ Median time cannot be 0.", ephemeral=True
         )
         return
-
+ 
     result = calculate_evaluation(t, z, x, y, rank)
-
+ 
     embed = discord.Embed(
         title="🏆 Final Evaluation Score",
         color=discord.Color.gold(),
     )
     embed.add_field(name="Score", value=f"**{result['score']:.4f}**", inline=False)
-
+ 
     if show_breakdown:
         embed.add_field(
             name="Inputs",
@@ -161,19 +169,19 @@ async def evaluate(
             ),
             inline=False,
         )
-
+ 
     embed.set_footer(text="Formula: HeistCoeff × PerformanceValue × (1/√rank)")
     await interaction.response.send_message(embed=embed)
-
-
+ 
+ 
 # ── Startup ───────────────────────────────────────────────────────────────────
-
+ 
 @client.event
 async def on_ready():
     await tree.sync()
     print(f"✅ Logged in as {client.user} — slash commands synced.")
-
-
+ 
+ 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import os
@@ -181,3 +189,4 @@ if __name__ == "__main__":
     if not token:
         raise RuntimeError("Set the DISCORD_TOKEN environment variable before running.")
     client.run(token)
+ 
