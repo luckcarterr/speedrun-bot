@@ -114,8 +114,8 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int, time
 @app_commands.describe(
     player_time          = "Your run time (e.g. 1:23.45 or 83.45)",
     median_time          = "Median benchmark time for this heist (same format)",
-    time_above           = "Time difference between you and the rank above (seconds or mm:ss)",
-    time_below           = "Time difference between you and the rank below (seconds or mm:ss)",
+    time_above           = "Full run time of the person ranked above you. If you are 1st place, enter your own time here.",
+    time_below           = "Full run time of the person ranked below you. If you are last place, enter your own time here.",
     rank                 = "Your placement on the leaderboard (1 = first place)",
     timegate_amount      = "Time to subtract from player time and median (e.g. timegate duration, same format)",
     timegate_foundation  = "Use timegate formula: (11-rank)×5 instead of normal formula (default: False)",
@@ -139,8 +139,6 @@ async def evaluate(
     try:
         t = parse_time(player_time)
         z = parse_time(median_time)
-        x = parse_time(time_above)
-        y = parse_time(time_below)
         tg = parse_time(timegate_amount)
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ **Input error:** {e}", ephemeral=True)
@@ -148,6 +146,8 @@ async def evaluate(
  
     t = max(0, t - tg)
     z = max(0, z - tg)
+    x = max(0, t - parse_time(time_above))  # gap to rank above (how much slower you are)
+    y = max(0, parse_time(time_below) - t)  # gap to rank below (how much faster you are)
  
     if z == 0:
         await interaction.response.send_message(
