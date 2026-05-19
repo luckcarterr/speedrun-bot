@@ -146,8 +146,10 @@ async def evaluate(
  
     t = max(0, t - tg)
     z = max(0, z - tg)
-    x = max(0, t - parse_time(time_above))  # gap to rank above (how much slower you are)
-    y = max(0, parse_time(time_below) - t)  # gap to rank below (how much faster you are)
+    above_time = max(0, parse_time(time_above) - tg)
+    below_time = max(0, parse_time(time_below) - tg)
+    x = max(0, t - above_time)  # gap to rank above
+    y = max(0, below_time - t)  # gap to rank below
  
     if z == 0:
         await interaction.response.send_message(
