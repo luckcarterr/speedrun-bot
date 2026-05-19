@@ -90,6 +90,7 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int, time
             score *= 1.5
  
     score = score * timegate_multiplier + timegate_addition
+    score = max(0, score)
  
     return {
         "score": score,
@@ -116,6 +117,7 @@ def calculate_evaluation(t: float, z: float, x: float, y: float, rank: int, time
     time_above           = "Time difference between you and the rank above (seconds or mm:ss)",
     time_below           = "Time difference between you and the rank below (seconds or mm:ss)",
     rank                 = "Your placement on the leaderboard (1 = first place)",
+    timegate_amount      = "Time to subtract from player time and median (e.g. timegate duration, same format)",
     timegate_foundation  = "Use timegate formula: (11-rank)×5 instead of normal formula (default: False)",
     timegate_multiplier  = "Timegate multiplier applied to final score (default: 1.0)",
     timegate_addition    = "Timegate addition applied after multiplier (default: 0.0)",
@@ -128,6 +130,7 @@ async def evaluate(
     time_above: str,
     time_below: str,
     rank: app_commands.Range[int, 1],
+    timegate_amount: str = "0",
     timegate_foundation: bool = False,
     timegate_multiplier: float = 1.0,
     timegate_addition: float = 0.0,
@@ -138,9 +141,13 @@ async def evaluate(
         z = parse_time(median_time)
         x = parse_time(time_above)
         y = parse_time(time_below)
+        tg = parse_time(timegate_amount)
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ **Input error:** {e}", ephemeral=True)
         return
+ 
+    t = max(0, t - tg)
+    z = max(0, z - tg)
  
     if z == 0:
         await interaction.response.send_message(
@@ -160,11 +167,12 @@ async def evaluate(
         embed.add_field(
             name="Inputs",
             value=(
-                f"**Player time:** {format_seconds(t)}\n"
-                f"**Median (z):** {format_seconds(z)}\n"
+                f"**Player time:** {format_seconds(t)}" + (f" *(adjusted from {format_seconds(t + tg)})*" if tg > 0 else "") + "\n"
+                f"**Median (z):** {format_seconds(z)}" + (f" *(adjusted from {format_seconds(z + tg)})*" if tg > 0 else "") + "\n"
                 f"**Time above (x):** {format_seconds(x)}\n"
                 f"**Time below (y):** {format_seconds(y)}\n"
                 f"**Rank:** #{rank}"
+                + (f"\n**Timegate removed:** {format_seconds(tg)}" if tg > 0 else "")
             ),
             inline=False,
         )
