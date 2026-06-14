@@ -78,9 +78,12 @@ def save_players(players: dict):
 
 def load_meta() -> dict:
     if not os.path.exists(META_FILE):
-        return {"season": 1, "recent_duels": []}
+        return {"season": 1, "recent_duels": [], "registration": False}
     with open(META_FILE, "r") as f:
-        return json.load(f)
+        meta = json.load(f)
+    if "registration" not in meta:
+        meta["registration"] = False
+    return meta
 
 def save_meta(meta: dict):
     with open(META_FILE, "w") as f:
@@ -176,6 +179,9 @@ def default_player(name: str, starting_elo: int, season: int) -> dict:
 @tree.command(name="introduce", description="Add a new player to the Elo system.")
 @app_commands.describe(player="Player's name", starting_elo="Starting Elo (default: 1000)")
 async def introduce(interaction: discord.Interaction, player: str, starting_elo: int = 1000):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
     players = load_players()
     meta = load_meta()
     if get_player(players, player):
@@ -213,6 +219,10 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
         t2 = parse_time(player2_time)
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ {e}", ephemeral=True)
+        return
+
+    if meta.get("registration", False):
+        await interaction.response.send_message("⏳ The season is in **registration period**. Wait for an admin to use `/startseason`.", ephemeral=True)
         return
 
     p1_won = t1 < t2
@@ -699,13 +709,33 @@ async def seasonreset(interaction: discord.Interaction):
 
     meta["season"] = new_season
     meta["recent_duels"] = []
+    meta["registration"] = True
     save_meta(meta)
     save_players(players)
 
-    embed = discord.Embed(title="🔄 Season Reset", color=discord.Color.purple())
+    embed = discord.Embed(title="🔄 Season Ended — Registration Open", color=discord.Color.purple())
     embed.add_field(name="Season Ended", value=f"Season {old_season}", inline=True)
-    embed.add_field(name="New Season", value=f"Season {new_season}", inline=True)
-    embed.add_field(name="Notes", value="Season history saved to all profiles. Elos soft reset 25% toward 1000. All-time stats unchanged.", inline=False)
+    embed.add_field(name="Upcoming Season", value=f"Season {new_season}", inline=True)
+    embed.add_field(name="Status", value="🟡 Registration period open. Duels are disabled until an admin uses `/startseason`.", inline=False)
+    embed.add_field(name="Notes", value="Season history saved. Elos soft reset 25% toward 1000. All-time stats unchanged.", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+
+
+@tree.command(name="startseason", description="[Admin] Start the new season and open duels.")
+async def startseason(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    if not meta.get("registration", False):
+        await interaction.response.send_message("⚠️ No registration period is active.", ephemeral=True)
+        return
+    meta["registration"] = False
+    save_meta(meta)
+    embed = discord.Embed(title="✅ Season Started!", color=discord.Color.green())
+    embed.add_field(name="Season", value=f"Season {meta['season']}", inline=True)
+    embed.add_field(name="Status", value="🟢 Duels are now open!", inline=True)
     await interaction.response.send_message(embed=embed)
 
 
