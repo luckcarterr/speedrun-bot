@@ -3,17 +3,17 @@ from discord import app_commands
 import json
 import os
 import math
- 
+
 # ── Bot setup ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
- 
+
 DATA_FILE = "players.json"
 META_FILE = "meta.json"
- 
+
 # ── Title system ──────────────────────────────────────────────────────────────
- 
+
 SEASON_TITLES = [
     (2000, "Master"),
     (1849, "Ruby"),
@@ -23,7 +23,7 @@ SEASON_TITLES = [
     (1000, "Silver"),
     (0,    "Bronze"),
 ]
- 
+
 TITLE_EMOJIS = {
     "Master":     "👑",
     "Ruby":       "💎",
@@ -34,20 +34,20 @@ TITLE_EMOJIS = {
     "Bronze":     "🥉",
     "Grandmaster":"🌟",
 }
- 
+
 GRANDMASTER_THRESHOLD = 2250  # All-time only
- 
+
 def get_title(elo: int) -> str:
     for threshold, title in SEASON_TITLES:
         if elo >= threshold:
             return title
     return "Bronze"
- 
+
 def get_alltime_title(elo: int) -> str:
     if elo >= GRANDMASTER_THRESHOLD:
         return "Grandmaster"
     return get_title(elo)
- 
+
 def next_title_info(elo: int) -> tuple:
     """Returns (next_title, elo_needed) or (None, None) if at Master."""
     for i, (threshold, title) in enumerate(SEASON_TITLES):
@@ -57,73 +57,73 @@ def next_title_info(elo: int) -> tuple:
             next_threshold, next_title = SEASON_TITLES[i - 1]
             return next_title, next_threshold - elo
     return "Silver", 1000 - elo
- 
+
 def progress_bar(current: int, target: int, start: int, length: int = 10) -> str:
     total = target - start
     done = current - start
     filled = max(0, min(length, round((done / total) * length))) if total > 0 else length
     return "▓" * filled + "░" * (length - filled)
- 
+
 # ── Data helpers ──────────────────────────────────────────────────────────────
- 
+
 def load_players() -> dict:
     if not os.path.exists(DATA_FILE):
         return {}
     with open(DATA_FILE, "r") as f:
         return json.load(f)
- 
+
 def save_players(players: dict):
     with open(DATA_FILE, "w") as f:
         json.dump(players, f, indent=2)
- 
+
 def load_meta() -> dict:
     if not os.path.exists(META_FILE):
         return {"season": 1, "recent_duels": []}
     with open(META_FILE, "r") as f:
         return json.load(f)
- 
+
 def save_meta(meta: dict):
     with open(META_FILE, "w") as f:
         json.dump(meta, f, indent=2)
- 
+
 def get_player(players: dict, name: str):
     return players.get(name.lower())
- 
+
 def set_player(players: dict, name: str, data: dict):
     players[name.lower()] = data
     save_players(players)
- 
+
 def is_admin(interaction: discord.Interaction) -> bool:
     return interaction.user.guild_permissions.administrator
- 
+
 # ── Elo helpers ───────────────────────────────────────────────────────────────
- 
+
 BASE_K = 64
 PROVISIONAL_K = 128
 PROVISIONAL_MATCHES = 10
 ELO_FLOOR = 100
 ALLTIME_K_FACTOR = 0.5
- 
+
 def expected_score(player_elo: float, opponent_elo: float) -> float:
     return 1 / (1 + 10 ** ((opponent_elo - player_elo) / 400))
- 
+
 def margin_factor(time_diff_seconds: float) -> float:
     max_margin = 180
     factor = min(time_diff_seconds / max_margin, 1.0)
     return 1 + factor
- 
+
 def calculate_k(match_count: int, alltime: bool = False) -> float:
     base = PROVISIONAL_K if match_count < PROVISIONAL_MATCHES else BASE_K
     if alltime:
         base = base * ALLTIME_K_FACTOR
     return base
- 
+
 def calculate_elo_change(player_elo, opponent_elo, player_won, match_count, time_diff, alltime=False):
     k = calculate_k(match_count, alltime) * margin_factor(time_diff)
     expected = expected_score(player_elo, opponent_elo)
     actual = 1.0 if player_won else 0.0
     return round(k * (actual - expected), 2)
- 
+
 def parse_time(time_str: str) -> float:
     time_str = time_str.strip().replace(".", ":", 1) if time_str.count(".") == 2 else time_str.strip()
     parts = time_str.split(":")
@@ -138,7 +138,7 @@ def parse_time(time_str: str) -> float:
             raise ValueError
     except ValueError:
         raise ValueError(f"Cannot parse time '{time_str}'. Use ss, mm:ss, or hh:mm:ss.")
- 
+
 def get_rank_position(players: dict, name: str, alltime: bool = False) -> int:
     key = "alltime_elo" if alltime else "elo"
     sorted_players = sorted(players.values(), key=lambda p: p.get(key, 0), reverse=True)
@@ -146,12 +146,12 @@ def get_rank_position(players: dict, name: str, alltime: bool = False) -> int:
         if p["name"].lower() == name.lower():
             return i + 1
     return -1
- 
+
 def ordinal(n: int) -> str:
     if 11 <= n % 100 <= 13:
         return f"{n}th"
     return f"{n}{['th','st','nd','rd','th'][min(n % 10, 4)]}"
- 
+
 def default_player(name: str, starting_elo: int, season: int) -> dict:
     return {
         "name": name,
@@ -170,9 +170,9 @@ def default_player(name: str, starting_elo: int, season: int) -> dict:
         "season_history": {},
         "last_duel": None,
     }
- 
+
 # ── Commands ──────────────────────────────────────────────────────────────────
- 
+
 @tree.command(name="introduce", description="Add a new player to the Elo system.")
 @app_commands.describe(player="Player's name", starting_elo="Starting Elo (default: 1000)")
 async def introduce(interaction: discord.Interaction, player: str, starting_elo: int = 1000):
@@ -188,8 +188,8 @@ async def introduce(interaction: discord.Interaction, player: str, starting_elo:
     embed.add_field(name="Starting Elo", value=str(starting_elo), inline=True)
     embed.add_field(name="Season", value=f"Season {meta['season']}", inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="duel", description="Log a duel result and update both players' Elo.")
 @app_commands.describe(
     player1="First player's name",
@@ -214,35 +214,35 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
     except ValueError as e:
         await interaction.response.send_message(f"⚠️ {e}", ephemeral=True)
         return
- 
+
     p1_won = t1 < t2
     time_diff = abs(t1 - t2)
- 
+
     p1_season_change = calculate_elo_change(p1["elo"], p2["elo"], p1_won, p1["matches"], time_diff)
     p2_season_change = calculate_elo_change(p2["elo"], p1["elo"], not p1_won, p2["matches"], time_diff)
     p1_alltime_change = calculate_elo_change(p1["alltime_elo"], p2["alltime_elo"], p1_won, p1["alltime_matches"], time_diff, alltime=True)
     p2_alltime_change = calculate_elo_change(p2["alltime_elo"], p1["alltime_elo"], not p1_won, p2["alltime_matches"], time_diff, alltime=True)
- 
+
     old_p1_elo = p1["elo"]
     old_p2_elo = p2["elo"]
     old_p1_alltime = p1["alltime_elo"]
     old_p2_alltime = p2["alltime_elo"]
- 
+
     p1["elo"] = max(ELO_FLOOR, round(p1["elo"] + p1_season_change))
     p2["elo"] = max(ELO_FLOOR, round(p2["elo"] + p2_season_change))
     p1["alltime_elo"] = max(ELO_FLOOR, round(p1["alltime_elo"] + p1_alltime_change))
     p2["alltime_elo"] = max(ELO_FLOOR, round(p2["alltime_elo"] + p2_alltime_change))
- 
+
     p1["peak_elo"] = max(p1["peak_elo"], p1["elo"])
     p2["peak_elo"] = max(p2["peak_elo"], p2["elo"])
     p1["alltime_peak_elo"] = max(p1["alltime_peak_elo"], p1["alltime_elo"])
     p2["alltime_peak_elo"] = max(p2["alltime_peak_elo"], p2["alltime_elo"])
- 
+
     p1["matches"] += 1
     p2["matches"] += 1
     p1["alltime_matches"] += 1
     p2["alltime_matches"] += 1
- 
+
     if p1_won:
         p1["wins"] += 1
         p2["losses"] += 1
@@ -259,18 +259,18 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
         p2["streak"] = max(1, p2["streak"] + 1) if p2["streak"] >= 0 else 1
         p1["streak"] = min(-1, p1["streak"] - 1) if p1["streak"] <= 0 else -1
         winner, loser = p2["name"], p1["name"]
- 
+
     p1["last_duel"] = {"opponent": player2, "p1_won": p1_won, "p1_season_change": p1_season_change, "p2_season_change": p2_season_change, "p1_alltime_change": p1_alltime_change, "p2_alltime_change": p2_alltime_change, "old_p1_elo": old_p1_elo, "old_p2_elo": old_p2_elo, "old_p1_alltime": old_p1_alltime, "old_p2_alltime": old_p2_alltime}
     p2["last_duel"] = p1["last_duel"]
- 
+
     set_player(players, player1, p1)
     set_player(players, player2, p2)
- 
+
     recent = meta.get("recent_duels", [])
     recent.insert(0, {"player1": p1["name"], "player2": p2["name"], "p1_time": player1_time, "p2_time": player2_time, "winner": winner, "loser": loser, "margin": round(time_diff, 2), "season": meta["season"]})
     meta["recent_duels"] = recent[:5]
     save_meta(meta)
- 
+
     embed = discord.Embed(title="⚔️ Duel Result", color=discord.Color.gold())
     embed.add_field(name="Winner 🏆", value=winner, inline=True)
     embed.add_field(name="Loser", value=loser, inline=True)
@@ -281,8 +281,8 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
     embed.add_field(name=f"{p2['name']} All-Time Elo", value=f"{old_p2_alltime} → **{p2['alltime_elo']}** ({'+' if p2_alltime_change >= 0 else ''}{round(p2_alltime_change)})", inline=True)
     embed.set_footer(text=f"Season {meta['season']}")
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="undoduel", description="Revert the last duel between two players.")
 @app_commands.describe(player1="First player", player2="Second player")
 async def undoduel(interaction: discord.Interaction, player1: str, player2: str):
@@ -296,7 +296,7 @@ async def undoduel(interaction: discord.Interaction, player1: str, player2: str)
     if not d or d["opponent"].lower() != player2.lower():
         await interaction.response.send_message(f"⚠️ No recent duel found between **{player1}** and **{player2}**.", ephemeral=True)
         return
- 
+
     p1["elo"] = d["old_p1_elo"]
     p2["elo"] = d["old_p2_elo"]
     p1["alltime_elo"] = d["old_p1_alltime"]
@@ -305,7 +305,7 @@ async def undoduel(interaction: discord.Interaction, player1: str, player2: str)
     p2["matches"] = max(0, p2["matches"] - 1)
     p1["alltime_matches"] = max(0, p1["alltime_matches"] - 1)
     p2["alltime_matches"] = max(0, p2["alltime_matches"] - 1)
- 
+
     if d["p1_won"]:
         p1["wins"] = max(0, p1["wins"] - 1)
         p2["losses"] = max(0, p2["losses"] - 1)
@@ -316,18 +316,18 @@ async def undoduel(interaction: discord.Interaction, player1: str, player2: str)
         p1["losses"] = max(0, p1["losses"] - 1)
         p2["alltime_wins"] = max(0, p2["alltime_wins"] - 1)
         p1["alltime_losses"] = max(0, p1["alltime_losses"] - 1)
- 
+
     p1["last_duel"] = None
     p2["last_duel"] = None
     set_player(players, player1, p1)
     set_player(players, player2, p2)
- 
+
     embed = discord.Embed(title="↩️ Duel Undone", color=discord.Color.orange())
     embed.add_field(name=f"{p1['name']} Elo restored to", value=str(p1["elo"]), inline=True)
     embed.add_field(name=f"{p2['name']} Elo restored to", value=str(p2["elo"]), inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="profile", description="View a player's full profile across all seasons.")
 @app_commands.describe(player="Player's name")
 async def profile(interaction: discord.Interaction, player: str):
@@ -337,7 +337,7 @@ async def profile(interaction: discord.Interaction, player: str):
     if not p:
         await interaction.response.send_message(f"⚠️ **{player}** is not in the system.", ephemeral=True)
         return
- 
+
     current_season = meta["season"]
     season_rank = get_rank_position(players, player, alltime=False)
     alltime_rank = get_rank_position(players, player, alltime=True)
@@ -348,12 +348,12 @@ async def profile(interaction: discord.Interaction, player: str):
     provisional = p["matches"] < PROVISIONAL_MATCHES
     streak_str = f"🔥 {p['streak']}W" if p["streak"] > 0 else (f"❄️ {abs(p['streak'])}L" if p["streak"] < 0 else "—")
     wl = f"{p['wins'] / p['losses']:.2f}" if p["losses"] > 0 else "∞"
- 
+
     embed = discord.Embed(
         title=f"{title_emoji} {p['name']}",
         color=discord.Color.gold(),
     )
- 
+
     # Current season
     current_block = (
         f"**S{current_season}** — {title_emoji} {title}{' ⚠️ Provisional' if provisional else ''}\n"
@@ -362,7 +362,7 @@ async def profile(interaction: discord.Interaction, player: str):
         f"Streak: {streak_str}"
     )
     embed.add_field(name="Current Season", value=current_block, inline=False)
- 
+
     # Season history
     history = p.get("season_history", {})
     if history:
@@ -375,7 +375,7 @@ async def profile(interaction: discord.Interaction, player: str):
             rank_str = f" / {ordinal(s_rank)}" if s_rank else ""
             lines.append(f"**S{s_num}** — {s_emoji} {s_title}{rank_str}")
         embed.add_field(name="Season History", value="\n".join(lines), inline=False)
- 
+
     # All-time
     alltime_wl = f"{p['alltime_wins'] / p['alltime_losses']:.2f}" if p["alltime_losses"] > 0 else "∞"
     alltime_block = (
@@ -385,10 +385,10 @@ async def profile(interaction: discord.Interaction, player: str):
         f"Total Matches: {p['alltime_matches']}"
     )
     embed.add_field(name="——— ALL TIME ———", value=alltime_block, inline=False)
- 
+
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="milestone", description="See your title progress and how far you are from the next rank.")
 @app_commands.describe(player="Player's name")
 async def milestone(interaction: discord.Interaction, player: str):
@@ -397,22 +397,22 @@ async def milestone(interaction: discord.Interaction, player: str):
     if not p:
         await interaction.response.send_message(f"⚠️ **{player}** is not in the system.", ephemeral=True)
         return
- 
+
     elo = p["elo"]
     alltime_elo = p["alltime_elo"]
     title = get_title(elo)
     title_emoji = TITLE_EMOJIS.get(title, "")
     next_t, elo_needed = next_title_info(elo)
- 
+
     # Find current bracket floor
     current_floor = 0
     for threshold, t in SEASON_TITLES:
         if elo >= threshold:
             current_floor = threshold
             break
- 
+
     embed = discord.Embed(title=f"🎯 {p['name']} — Title Progress", color=discord.Color.blurple())
- 
+
     # Season title progress
     if next_t:
         next_threshold = elo + elo_needed
@@ -425,9 +425,9 @@ async def milestone(interaction: discord.Interaction, player: str):
         )
     else:
         season_block = f"{title_emoji} **{title}** — Maximum season title reached! ({elo} Elo)"
- 
+
     embed.add_field(name="Season", value=season_block, inline=False)
- 
+
     # All-time title progress
     alltime_title = get_alltime_title(alltime_elo)
     alltime_emoji = TITLE_EMOJIS.get(alltime_title, "")
@@ -458,11 +458,11 @@ async def milestone(interaction: discord.Interaction, player: str):
                 f"🌟 **Grandmaster** — **{gm_needed} elo away**\n"
                 f"{gm_bar} {alltime_elo}/{GRANDMASTER_THRESHOLD}"
             )
- 
+
     embed.add_field(name="All-Time", value=alltime_block, inline=False)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="leaderboard", description="Show the top 10 players by season Elo.")
 async def leaderboard(interaction: discord.Interaction):
     players = load_players()
@@ -480,8 +480,8 @@ async def leaderboard(interaction: discord.Interaction):
         lines.append(f"**#{i+1}** {p['name']} — {p['elo']} Elo {emoji} {title} ({p['wins']}W/{p['losses']}L){provisional}")
     embed.description = "\n".join(lines)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="alltimeleaderboard", description="Show the top 10 players by all-time Elo.")
 async def alltimeleaderboard(interaction: discord.Interaction):
     players = load_players()
@@ -497,8 +497,8 @@ async def alltimeleaderboard(interaction: discord.Interaction):
         lines.append(f"**#{i+1}** {p['name']} — {p['alltime_elo']} Elo {emoji} {title} ({p['alltime_wins']}W/{p['alltime_losses']}L)")
     embed.description = "\n".join(lines)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="compare", description="Compare two players and predict elo swing if they dueled.")
 @app_commands.describe(player1="First player", player2="Second player")
 async def compare(interaction: discord.Interaction, player1: str, player2: str):
@@ -511,7 +511,7 @@ async def compare(interaction: discord.Interaction, player1: str, player2: str):
     if not p2:
         await interaction.response.send_message(f"⚠️ **{player2}** not found.", ephemeral=True)
         return
- 
+
     p1_win_chance = round(expected_score(p1["elo"], p2["elo"]) * 100, 1)
     p2_win_chance = round(100 - p1_win_chance, 1)
     p1_if_win = round(calculate_elo_change(p1["elo"], p2["elo"], True, p1["matches"], 60))
@@ -520,14 +520,14 @@ async def compare(interaction: discord.Interaction, player1: str, player2: str):
     p2_if_loss = round(calculate_elo_change(p2["elo"], p1["elo"], False, p2["matches"], 60))
     t1 = get_title(p1["elo"])
     t2 = get_title(p2["elo"])
- 
+
     embed = discord.Embed(title=f"⚔️ {p1['name']} vs {p2['name']}", color=discord.Color.blurple())
     embed.add_field(name=p1["name"], value=f"{TITLE_EMOJIS.get(t1,'')} {t1} · {p1['elo']} Elo\nWin chance: {p1_win_chance}%\nIf win: +{p1_if_win} · If loss: {p1_if_loss}", inline=True)
     embed.add_field(name=p2["name"], value=f"{TITLE_EMOJIS.get(t2,'')} {t2} · {p2['elo']} Elo\nWin chance: {p2_win_chance}%\nIf win: +{p2_if_win} · If loss: {p2_if_loss}", inline=True)
     embed.set_footer(text="Elo swing estimated at 60s margin. Actual swing depends on real time difference.")
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="alltimecompare", description="Compare two players by all-time Elo.")
 @app_commands.describe(player1="First player", player2="Second player")
 async def alltimecompare(interaction: discord.Interaction, player1: str, player2: str):
@@ -540,18 +540,18 @@ async def alltimecompare(interaction: discord.Interaction, player1: str, player2
     if not p2:
         await interaction.response.send_message(f"⚠️ **{player2}** not found.", ephemeral=True)
         return
- 
+
     p1_win_chance = round(expected_score(p1["alltime_elo"], p2["alltime_elo"]) * 100, 1)
     p2_win_chance = round(100 - p1_win_chance, 1)
     t1 = get_alltime_title(p1["alltime_elo"])
     t2 = get_alltime_title(p2["alltime_elo"])
- 
+
     embed = discord.Embed(title=f"🌟 {p1['name']} vs {p2['name']} — All-Time", color=discord.Color.gold())
     embed.add_field(name=p1["name"], value=f"{TITLE_EMOJIS.get(t1,'')} {t1} · {p1['alltime_elo']} Elo\nPeak: {p1['alltime_peak_elo']}\nWin chance: {p1_win_chance}%\nRecord: {p1['alltime_wins']}W/{p1['alltime_losses']}L", inline=True)
     embed.add_field(name=p2["name"], value=f"{TITLE_EMOJIS.get(t2,'')} {t2} · {p2['alltime_elo']} Elo\nPeak: {p2['alltime_peak_elo']}\nWin chance: {p2_win_chance}%\nRecord: {p2['alltime_wins']}W/{p2['alltime_losses']}L", inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="recentduels", description="Show the last 5 duels logged.")
 async def recentduels(interaction: discord.Interaction):
     meta = load_meta()
@@ -565,8 +565,8 @@ async def recentduels(interaction: discord.Interaction):
         lines.append(f"**{d['winner']}** def. **{d['loser']}** — {d['margin']}s margin (S{d['season']})")
     embed.description = "\n".join(lines)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="rename", description="Rename a player.")
 @app_commands.describe(player="Current name", new_name="New name")
 async def rename(interaction: discord.Interaction, player: str, new_name: str):
@@ -586,8 +586,8 @@ async def rename(interaction: discord.Interaction, player: str, new_name: str):
     embed.add_field(name="Old Name", value=player, inline=True)
     embed.add_field(name="New Name", value=new_name, inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="remove", description="Remove a player from the system.")
 @app_commands.describe(player="Player's name")
 async def remove(interaction: discord.Interaction, player: str):
@@ -600,8 +600,8 @@ async def remove(interaction: discord.Interaction, player: str):
     embed = discord.Embed(title="🗑️ Player Removed", color=discord.Color.red())
     embed.add_field(name="Player", value=player, inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="setelo", description="[Admin] Manually set a player's season Elo.")
 @app_commands.describe(player="Player's name", elo="New Elo value")
 async def setelo(interaction: discord.Interaction, player: str, elo: int):
@@ -622,8 +622,8 @@ async def setelo(interaction: discord.Interaction, player: str, elo: int):
     embed.add_field(name="Old Elo", value=str(old_elo), inline=True)
     embed.add_field(name="New Elo", value=str(elo), inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 @tree.command(name="setalltimeelo", description="[Admin] Manually set a player's all-time Elo.")
 @app_commands.describe(player="Player's name", elo="New all-time Elo value")
 async def setalltimeelo(interaction: discord.Interaction, player: str, elo: int):
@@ -644,8 +644,25 @@ async def setalltimeelo(interaction: discord.Interaction, player: str, elo: int)
     embed.add_field(name="Old All-Time Elo", value=str(old_elo), inline=True)
     embed.add_field(name="New All-Time Elo", value=str(elo), inline=True)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
+@tree.command(name="setseason", description="[Admin] Manually set the current season number without resetting anything.")
+@app_commands.describe(season="Season number to set")
+async def setseason(interaction: discord.Interaction, season: int):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    old_season = meta["season"]
+    meta["season"] = season
+    save_meta(meta)
+    embed = discord.Embed(title="🔧 Season Updated", color=discord.Color.orange())
+    embed.add_field(name="Old Season", value=f"Season {old_season}", inline=True)
+    embed.add_field(name="New Season", value=f"Season {season}", inline=True)
+    embed.set_footer(text="No player data or history was changed.")
+    await interaction.response.send_message(embed=embed)
+
+
 @tree.command(name="seasonreset", description="[Admin] End the current season and start a new one.")
 async def seasonreset(interaction: discord.Interaction):
     if not is_admin(interaction):
@@ -655,10 +672,10 @@ async def seasonreset(interaction: discord.Interaction):
     meta = load_meta()
     old_season = meta["season"]
     new_season = old_season + 1
- 
+
     sorted_players = sorted(players.values(), key=lambda p: p["elo"], reverse=True)
     rank_map = {p["name"].lower(): i + 1 for i, p in enumerate(sorted_players)}
- 
+
     for key, p in players.items():
         final_title = get_title(p["elo"])
         final_rank = rank_map.get(p["name"].lower())
@@ -679,30 +696,29 @@ async def seasonreset(interaction: discord.Interaction):
         p["streak"] = 0
         p["last_duel"] = None
         players[key] = p
- 
+
     meta["season"] = new_season
     meta["recent_duels"] = []
     save_meta(meta)
     save_players(players)
- 
+
     embed = discord.Embed(title="🔄 Season Reset", color=discord.Color.purple())
     embed.add_field(name="Season Ended", value=f"Season {old_season}", inline=True)
     embed.add_field(name="New Season", value=f"Season {new_season}", inline=True)
     embed.add_field(name="Notes", value="Season history saved to all profiles. Elos soft reset 25% toward 1000. All-time stats unchanged.", inline=False)
     await interaction.response.send_message(embed=embed)
- 
- 
+
+
 # ── Startup ───────────────────────────────────────────────────────────────────
- 
+
 @client.event
 async def on_ready():
     await tree.sync()
     print(f"✅ Logged in as {client.user} — slash commands synced.")
- 
- 
+
+
 if __name__ == "__main__":
     token = os.environ.get("DISCORD_TOKEN")
     if not token:
         raise RuntimeError("Set the DISCORD_TOKEN environment variable before running.")
     client.run(token)
- 
