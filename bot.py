@@ -6,6 +6,8 @@ import math
 
 # ── Bot setup ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
+intents.message_content = True
+intents.messages = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
@@ -204,6 +206,9 @@ async def introduce(interaction: discord.Interaction, player: str, starting_elo:
     player2_time="Player 2's total time across 4 rounds (mm:ss or ss)",
 )
 async def duel(interaction: discord.Interaction, player1: str, player2: str, player1_time: str, player2_time: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
     players = load_players()
     meta = load_meta()
     p1 = get_player(players, player1)
@@ -296,6 +301,9 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
 @tree.command(name="undoduel", description="Revert the last duel between two players.")
 @app_commands.describe(player1="First player", player2="Second player")
 async def undoduel(interaction: discord.Interaction, player1: str, player2: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
     players = load_players()
     p1 = get_player(players, player1)
     p2 = get_player(players, player2)
@@ -580,6 +588,9 @@ async def recentduels(interaction: discord.Interaction):
 @tree.command(name="rename", description="Rename a player.")
 @app_commands.describe(player="Current name", new_name="New name")
 async def rename(interaction: discord.Interaction, player: str, new_name: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
     players = load_players()
     p = get_player(players, player)
     if not p:
@@ -601,6 +612,9 @@ async def rename(interaction: discord.Interaction, player: str, new_name: str):
 @tree.command(name="remove", description="Remove a player from the system.")
 @app_commands.describe(player="Player's name")
 async def remove(interaction: discord.Interaction, player: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
     players = load_players()
     if not get_player(players, player):
         await interaction.response.send_message(f"⚠️ **{player}** not found.", ephemeral=True)
@@ -737,6 +751,17 @@ async def startseason(interaction: discord.Interaction):
     embed.add_field(name="Season", value=f"Season {meta['season']}", inline=True)
     embed.add_field(name="Status", value="🟢 Duels are now open!", inline=True)
     await interaction.response.send_message(embed=embed)
+
+
+
+@tree.command(name="purgechannel", description="[Admin] Delete all messages in this channel.")
+async def purgechannel(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    await interaction.response.send_message("🗑️ Purging all messages...", ephemeral=True)
+    deleted = await interaction.channel.purge(limit=None)
+    await interaction.followup.send(f"✅ Deleted **{len(deleted)}** messages.", ephemeral=True)
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
