@@ -420,7 +420,7 @@ async def profile(interaction: discord.Interaction, player: str):
         for t in tags:
             tag_data = meta["tags"].get(t.lower(), {})
             desc = tag_data.get("description", "")
-            highlighted = " ⭐" if p.get("highlighted_tag", "").lower() == t.lower() else ""
+            highlighted = " ⭐" if (p.get("highlighted_tag") or "").lower() == t.lower() else ""
             tag_lines.append(f"**{t}**{highlighted} — {desc}")
         embed.add_field(name="🏷️ Tags", value="\n".join(tag_lines), inline=False)
 
