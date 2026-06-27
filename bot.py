@@ -845,8 +845,7 @@ async def showqueue(interaction: discord.Interaction):
         return
     embed = discord.Embed(title="🎯 Matchmaking Queue", color=discord.Color.blurple())
     lines = [f"**#{i+1}** {p['name']} — {p['elo']} Elo" for i, p in enumerate(sorted(q, key=lambda x: x["elo"], reverse=True))]
-    embed.description = "
-".join(lines)
+    embed.description = "\n".join(lines)
     embed.set_footer(text=f"{len(q)} player(s) waiting")
     await interaction.response.send_message(embed=embed)
 
