@@ -103,8 +103,8 @@ def is_admin(interaction: discord.Interaction) -> bool:
 
 # ── Elo helpers ───────────────────────────────────────────────────────────────
 
-BASE_K = 64
-PROVISIONAL_K = 128
+BASE_K = 32
+PROVISIONAL_K = 64
 PROVISIONAL_MATCHES = 10
 ELO_FLOOR = 100
 ALLTIME_K_FACTOR = 0.5
@@ -762,6 +762,152 @@ async def purgechannel(interaction: discord.Interaction):
     await interaction.response.send_message("🗑️ Purging all messages...", ephemeral=True)
     deleted = await interaction.channel.purge(limit=None)
     await interaction.followup.send(f"✅ Deleted **{len(deleted)}** messages.", ephemeral=True)
+
+
+
+@tree.command(name="queue", description="Join the matchmaking queue.")
+async def queue(interaction: discord.Interaction):
+    meta = load_meta()
+    if meta.get("registration", False):
+        await interaction.response.send_message("⏳ Season is in registration period, matchmaking is disabled.", ephemeral=True)
+        return
+    q = meta.get("queue", [])
+    player_name = interaction.user.display_name
+    if any(p["name"] == player_name for p in q):
+        await interaction.response.send_message("⚠️ You are already in the queue!", ephemeral=True)
+        return
+
+    players = load_players()
+    p = get_player(players, player_name)
+    if not p:
+        await interaction.response.send_message("⚠️ You are not in the system. Ask an admin to `/introduce` you first.", ephemeral=True)
+        return
+
+    q.append({"name": player_name, "elo": p["elo"]})
+    meta["queue"] = q
+    save_meta(meta)
+
+    # Try to find a match
+    if len(q) >= 2:
+        # Sort by elo and find closest pair
+        q_sorted = sorted(q, key=lambda x: x["elo"])
+        best_pair = None
+        best_diff = float("inf")
+        for i in range(len(q_sorted) - 1):
+            diff = abs(q_sorted[i]["elo"] - q_sorted[i+1]["elo"])
+            if diff < best_diff:
+                best_diff = diff
+                best_pair = (q_sorted[i], q_sorted[i+1])
+
+        if best_pair:
+            p1, p2 = best_pair
+            q = [p for p in q if p["name"] not in (p1["name"], p2["name"])]
+            meta["queue"] = q
+            save_meta(meta)
+
+            embed = discord.Embed(title="⚔️ Match Found!", color=discord.Color.green())
+            embed.add_field(name="Player 1", value=f"{p1['name']} ({p1['elo']} Elo)", inline=True)
+            embed.add_field(name="Player 2", value=f"{p2['name']} ({p2['elo']} Elo)", inline=True)
+            embed.add_field(name="Elo Difference", value=str(best_diff), inline=True)
+            embed.set_footer(text="Coordinate your duel and have an admin log the result with /duel!")
+            await interaction.response.send_message(embed=embed)
+            return
+
+    embed = discord.Embed(title="✅ Joined Queue", color=discord.Color.blurple())
+    embed.add_field(name="Player", value=player_name, inline=True)
+    embed.add_field(name="Your Elo", value=str(p["elo"]), inline=True)
+    embed.add_field(name="Queue Size", value=str(len(q)), inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="leavequeue", description="Leave the matchmaking queue.")
+async def leavequeue(interaction: discord.Interaction):
+    meta = load_meta()
+    q = meta.get("queue", [])
+    player_name = interaction.user.display_name
+    new_q = [p for p in q if p["name"] != player_name]
+    if len(new_q) == len(q):
+        await interaction.response.send_message("⚠️ You are not in the queue.", ephemeral=True)
+        return
+    meta["queue"] = new_q
+    save_meta(meta)
+    embed = discord.Embed(title="👋 Left Queue", color=discord.Color.orange())
+    embed.add_field(name="Player", value=player_name, inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="showqueue", description="Show all players currently in the matchmaking queue.")
+async def showqueue(interaction: discord.Interaction):
+    meta = load_meta()
+    q = meta.get("queue", [])
+    if not q:
+        await interaction.response.send_message("The queue is currently empty.", ephemeral=True)
+        return
+    embed = discord.Embed(title="🎯 Matchmaking Queue", color=discord.Color.blurple())
+    lines = [f"**#{i+1}** {p['name']} — {p['elo']} Elo" for i, p in enumerate(sorted(q, key=lambda x: x["elo"], reverse=True))]
+    embed.description = "
+".join(lines)
+    embed.set_footer(text=f"{len(q)} player(s) waiting")
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="highlightedmatch", description="[Admin] Announce a highlighted match between two high-elo players.")
+@app_commands.describe(
+    player1="First player",
+    player2="Second player",
+    player1_stream="Player 1 stream link",
+    player2_stream="Player 2 stream link",
+    scheduled_time="When the match is happening (e.g. 'Saturday 8PM UTC')",
+)
+async def highlightedmatch(
+    interaction: discord.Interaction,
+    player1: str,
+    player2: str,
+    player1_stream: str,
+    player2_stream: str,
+    scheduled_time: str,
+):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    players = load_players()
+    meta = load_meta()
+    p1 = get_player(players, player1)
+    p2 = get_player(players, player2)
+    if not p1:
+        await interaction.response.send_message(f"⚠️ **{player1}** not found.", ephemeral=True)
+        return
+    if not p2:
+        await interaction.response.send_message(f"⚠️ **{player2}** not found.", ephemeral=True)
+        return
+
+    t1 = get_title(p1["elo"])
+    t2 = get_title(p2["elo"])
+    p1_win_chance = round(expected_score(p1["elo"], p2["elo"]) * 100, 1)
+    p2_win_chance = round(100 - p1_win_chance, 1)
+
+    embed = discord.Embed(
+        title="🌟 HIGHLIGHTED MATCH",
+        description=f"**{p1['name']}** vs **{p2['name']}**",
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name=f"{TITLE_EMOJIS.get(t1,'')} {p1['name']}",
+        value=f"{t1} · {p1['elo']} Elo
+Win chance: {p1_win_chance}%
+[🔴 Watch Live]({player1_stream})",
+        inline=True
+    )
+    embed.add_field(
+        name=f"{TITLE_EMOJIS.get(t2,'')} {p2['name']}",
+        value=f"{t2} · {p2['elo']} Elo
+Win chance: {p2_win_chance}%
+[🔴 Watch Live]({player2_stream})",
+        inline=True
+    )
+    embed.add_field(name="🕐 Scheduled", value=scheduled_time, inline=False)
+    embed.set_footer(text=f"Season {meta['season']} · Highlighted Match")
+    await interaction.response.send_message(embed=embed)
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
