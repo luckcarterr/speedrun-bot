@@ -39,6 +39,9 @@ TITLE_EMOJIS = {
 
 GRANDMASTER_THRESHOLD = 2250  # All-time only
 
+DUEL_QUEUE_CHANNEL = 1515670794162802709
+DUEL_RESULTS_CHANNEL = 1520400967995097118
+
 def get_title(elo: int) -> str:
     for threshold, title in SEASON_TITLES:
         if elo >= threshold:
@@ -858,8 +861,41 @@ async def queue(interaction: discord.Interaction):
             embed.add_field(name="Player 1", value=f"{p1['name']} ({p1['elo']} Elo)", inline=True)
             embed.add_field(name="Player 2", value=f"{p2['name']} ({p2['elo']} Elo)", inline=True)
             embed.add_field(name="Elo Difference", value=str(best_diff), inline=True)
-            embed.set_footer(text="Coordinate your duel and have an admin log the result with /duel!")
-            await interaction.response.send_message(embed=embed)
+            embed.set_footer(text="Join a Discord call, screen share, and post your screenshot proof in duel-results!")
+
+            # Post in duel-queue channel and ping both players
+            queue_channel = interaction.guild.get_channel(DUEL_QUEUE_CHANNEL)
+            results_channel = interaction.guild.get_channel(DUEL_RESULTS_CHANNEL)
+
+            # Find discord IDs for both players
+            all_players = load_players()
+            p1_data = get_player(all_players, p1["name"])
+            p2_data = get_player(all_players, p2["name"])
+            p1_mention = f"<@{p1_data['discord_id']}>" if p1_data and p1_data.get("discord_id") else p1["name"]
+            p2_mention = f"<@{p2_data['discord_id']}>" if p2_data and p2_data.get("discord_id") else p2["name"]
+
+            if queue_channel:
+                await queue_channel.send(
+                    content=f"{p1_mention} vs {p2_mention} — your match is ready! Join a Discord call, screen share your gameplay, and post your proof in <#{DUEL_RESULTS_CHANNEL}>.",
+                    embed=embed
+                )
+
+            # Create a forum thread in duel-results
+            if results_channel and hasattr(results_channel, "create_thread"):
+                thread_embed = discord.Embed(
+                    title=f"Duel: {p1['name']} vs {p2['name']}",
+                    description="Post your end screen screenshots here after the duel! An admin will log the result with /duel once both screenshots are submitted.",
+                    color=discord.Color.gold()
+                )
+                thread_embed.add_field(name=p1["name"], value=f"{p1['elo']} Elo", inline=True)
+                thread_embed.add_field(name=p2["name"], value=f"{p2['elo']} Elo", inline=True)
+                await results_channel.create_thread(
+                    name=f"{p1['name']} vs {p2['name']}",
+                    embed=thread_embed,
+                    reason="Duel match created"
+                )
+
+            await interaction.response.send_message("✅ Match found and announced!", ephemeral=True)
             return
 
     embed = discord.Embed(title="✅ Joined Queue", color=discord.Color.blurple())
