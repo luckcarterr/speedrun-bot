@@ -892,16 +892,12 @@ async def highlightedmatch(
     )
     embed.add_field(
         name=f"{TITLE_EMOJIS.get(t1,'')} {p1['name']}",
-        value=f"{t1} · {p1['elo']} Elo
-Win chance: {p1_win_chance}%
-[🔴 Watch Live]({player1_stream})",
+        value=f"{t1} - {p1['elo']} Elo\nWin chance: {p1_win_chance}%\n[Watch Live]({player1_stream})",
         inline=True
     )
     embed.add_field(
         name=f"{TITLE_EMOJIS.get(t2,'')} {p2['name']}",
-        value=f"{t2} · {p2['elo']} Elo
-Win chance: {p2_win_chance}%
-[🔴 Watch Live]({player2_stream})",
+        value=f"{t2} - {p2['elo']} Elo\nWin chance: {p2_win_chance}%\n[Watch Live]({player2_stream})",
         inline=True
     )
     embed.add_field(name="🕐 Scheduled", value=scheduled_time, inline=False)
