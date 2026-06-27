@@ -174,6 +174,7 @@ def default_player(name: str, starting_elo: int, season: int) -> dict:
         "season_joined": season,
         "season_history": {},
         "last_duel": None,
+        "discord_id": None,
     }
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -765,6 +766,54 @@ async def purgechannel(interaction: discord.Interaction):
 
 
 
+
+@tree.command(name="link", description="Link your Discord account to your player profile.")
+@app_commands.describe(player="Your player name in the system")
+async def link(interaction: discord.Interaction, player: str):
+    players = load_players()
+    p = get_player(players, player)
+    if not p:
+        await interaction.response.send_message(f"⚠️ **{player}** is not in the system. Ask an admin to introduce you first.", ephemeral=True)
+        return
+
+    # Check if this Discord account is already linked to someone else
+    for key, pl in players.items():
+        if pl.get("discord_id") == interaction.user.id and pl["name"].lower() != player.lower():
+            await interaction.response.send_message(f"⚠️ Your Discord account is already linked to **{pl['name']}**. Ask an admin to unlink you first.", ephemeral=True)
+            return
+
+    # Check if this player is already linked to a different Discord account
+    if p.get("discord_id") and p["discord_id"] != interaction.user.id:
+        await interaction.response.send_message(f"⚠️ **{player}** is already linked to a different Discord account. Ask an admin to unlink them first.", ephemeral=True)
+        return
+
+    p["discord_id"] = interaction.user.id
+    set_player(players, player, p)
+
+    embed = discord.Embed(title="✅ Account Linked", color=discord.Color.green())
+    embed.add_field(name="Player", value=player, inline=True)
+    embed.add_field(name="Discord", value=interaction.user.display_name, inline=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="unlink", description="[Admin] Unlink a Discord account from a player profile.")
+@app_commands.describe(player="Player name to unlink")
+async def unlink(interaction: discord.Interaction, player: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    players = load_players()
+    p = get_player(players, player)
+    if not p:
+        await interaction.response.send_message(f"⚠️ **{player}** not found.", ephemeral=True)
+        return
+    p["discord_id"] = None
+    set_player(players, player, p)
+    embed = discord.Embed(title="🔓 Account Unlinked", color=discord.Color.orange())
+    embed.add_field(name="Player", value=player, inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
 @tree.command(name="queue", description="Join the matchmaking queue.")
 async def queue(interaction: discord.Interaction):
     meta = load_meta()
@@ -772,15 +821,15 @@ async def queue(interaction: discord.Interaction):
         await interaction.response.send_message("⏳ Season is in registration period, matchmaking is disabled.", ephemeral=True)
         return
     q = meta.get("queue", [])
-    player_name = interaction.user.display_name
-    if any(p["name"] == player_name for p in q):
-        await interaction.response.send_message("⚠️ You are already in the queue!", ephemeral=True)
-        return
-
     players = load_players()
-    p = get_player(players, player_name)
+    # Find player by discord_id
+    p = next((pl for pl in players.values() if pl.get("discord_id") == interaction.user.id), None)
     if not p:
-        await interaction.response.send_message("⚠️ You are not in the system. Ask an admin to `/introduce` you first.", ephemeral=True)
+        await interaction.response.send_message("⚠️ Your Discord account is not linked to any player. Use `/link YourName` first.", ephemeral=True)
+        return
+    player_name = p["name"]
+    if any(pl["name"] == player_name for pl in q):
+        await interaction.response.send_message("⚠️ You are already in the queue!", ephemeral=True)
         return
 
     q.append({"name": player_name, "elo": p["elo"]})
@@ -824,8 +873,13 @@ async def queue(interaction: discord.Interaction):
 async def leavequeue(interaction: discord.Interaction):
     meta = load_meta()
     q = meta.get("queue", [])
-    player_name = interaction.user.display_name
-    new_q = [p for p in q if p["name"] != player_name]
+    players = load_players()
+    p = next((pl for pl in players.values() if pl.get("discord_id") == interaction.user.id), None)
+    if not p:
+        await interaction.response.send_message("⚠️ Your Discord account is not linked to any player.", ephemeral=True)
+        return
+    player_name = p["name"]
+    new_q = [pl for pl in q if pl["name"] != player_name]
     if len(new_q) == len(q):
         await interaction.response.send_message("⚠️ You are not in the queue.", ephemeral=True)
         return
