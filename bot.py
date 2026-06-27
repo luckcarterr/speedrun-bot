@@ -83,11 +83,13 @@ def save_players(players: dict):
 
 def load_meta() -> dict:
     if not os.path.exists(META_FILE):
-        return {"season": 1, "recent_duels": [], "registration": False}
+        return {"season": 1, "recent_duels": [], "registration": False, "tags": {}}
     with open(META_FILE, "r") as f:
         meta = json.load(f)
     if "registration" not in meta:
         meta["registration"] = False
+    if "tags" not in meta:
+        meta["tags"] = {}
     return meta
 
 def save_meta(meta: dict):
@@ -178,6 +180,8 @@ def default_player(name: str, starting_elo: int, season: int) -> dict:
         "season_history": {},
         "last_duel": None,
         "discord_id": None,
+        "tags": [],
+        "highlighted_tag": None,
     }
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -408,6 +412,18 @@ async def profile(interaction: discord.Interaction, player: str):
     )
     embed.add_field(name="——— ALL TIME ———", value=alltime_block, inline=False)
 
+    # Tags
+    tags = p.get("tags", [])
+    if tags:
+        meta = load_meta()
+        tag_lines = []
+        for t in tags:
+            tag_data = meta["tags"].get(t.lower(), {})
+            desc = tag_data.get("description", "")
+            highlighted = " ⭐" if p.get("highlighted_tag", "").lower() == t.lower() else ""
+            tag_lines.append(f"**{t}**{highlighted} — {desc}")
+        embed.add_field(name="🏷️ Tags", value="\n".join(tag_lines), inline=False)
+
     await interaction.response.send_message(embed=embed)
 
 
@@ -499,7 +515,8 @@ async def leaderboard(interaction: discord.Interaction):
         title = get_title(p["elo"])
         emoji = TITLE_EMOJIS.get(title, "")
         provisional = " ⚠️" if p["matches"] < PROVISIONAL_MATCHES else ""
-        lines.append(f"**#{i+1}** {p['name']} — {p['elo']} Elo {emoji} {title} ({p['wins']}W/{p['losses']}L){provisional}")
+        ht = f" [{p['highlighted_tag']}]" if p.get("highlighted_tag") else ""
+        lines.append(f"**#{i+1}** {p['name']}{ht} — {p['elo']} Elo {emoji} {title} ({p['wins']}W/{p['losses']}L){provisional}")
     embed.description = "\n".join(lines)
     await interaction.response.send_message(embed=embed)
 
@@ -940,58 +957,150 @@ async def showqueue(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@tree.command(name="highlightedmatch", description="[Admin] Announce a highlighted match between two high-elo players.")
-@app_commands.describe(
-    player1="First player",
-    player2="Second player",
-    player1_stream="Player 1 stream link",
-    player2_stream="Player 2 stream link",
-    scheduled_time="When the match is happening (e.g. 'Saturday 8PM UTC')",
-)
-async def highlightedmatch(
-    interaction: discord.Interaction,
-    player1: str,
-    player2: str,
-    player1_stream: str,
-    player2_stream: str,
-    scheduled_time: str,
-):
+
+
+@tree.command(name="createtag", description="[Admin] Create a new tag.")
+@app_commands.describe(name="Tag name", description="Tag description")
+async def createtag(interaction: discord.Interaction, name: str, description: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    if name.lower() in meta["tags"]:
+        await interaction.response.send_message(f"⚠️ Tag **{name}** already exists.", ephemeral=True)
+        return
+    meta["tags"][name.lower()] = {"name": name, "description": description}
+    save_meta(meta)
+    embed = discord.Embed(title="✅ Tag Created", color=discord.Color.green())
+    embed.add_field(name="Tag", value=name, inline=True)
+    embed.add_field(name="Description", value=description, inline=False)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="deletetag", description="[Admin] Delete a tag entirely.")
+@app_commands.describe(name="Tag name to delete")
+async def deletetag(interaction: discord.Interaction, name: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    if name.lower() not in meta["tags"]:
+        await interaction.response.send_message(f"⚠️ Tag **{name}** does not exist.", ephemeral=True)
+        return
+    del meta["tags"][name.lower()]
+    save_meta(meta)
+
+    # Remove tag from all players
+    players = load_players()
+    for key, p in players.items():
+        if name.lower() in [t.lower() for t in p.get("tags", [])]:
+            p["tags"] = [t for t in p.get("tags", []) if t.lower() != name.lower()]
+            if p.get("highlighted_tag", "").lower() == name.lower():
+                p["highlighted_tag"] = None
+            players[key] = p
+    save_players(players)
+
+    embed = discord.Embed(title="🗑️ Tag Deleted", color=discord.Color.red())
+    embed.add_field(name="Tag", value=name, inline=True)
+    embed.set_footer(text="Tag removed from all players.")
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="tag", description="[Admin] Assign a tag to a player.")
+@app_commands.describe(player="Player name", tagname="Tag to assign")
+async def tag(interaction: discord.Interaction, player: str, tagname: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    if tagname.lower() not in meta["tags"]:
+        await interaction.response.send_message(f"⚠️ Tag **{tagname}** does not exist. Create it first with `/createtag`.", ephemeral=True)
+        return
+    players = load_players()
+    p = get_player(players, player)
+    if not p:
+        await interaction.response.send_message(f"⚠️ **{player}** not found.", ephemeral=True)
+        return
+    if tagname.lower() in [t.lower() for t in p.get("tags", [])]:
+        await interaction.response.send_message(f"⚠️ **{player}** already has the **{tagname}** tag.", ephemeral=True)
+        return
+    p.setdefault("tags", []).append(meta["tags"][tagname.lower()]["name"])
+    set_player(players, player, p)
+    embed = discord.Embed(title="🏷️ Tag Assigned", color=discord.Color.green())
+    embed.add_field(name="Player", value=player, inline=True)
+    embed.add_field(name="Tag", value=tagname, inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="removetag", description="[Admin] Remove a tag from a player.")
+@app_commands.describe(player="Player name", tagname="Tag to remove")
+async def removetag(interaction: discord.Interaction, player: str, tagname: str):
     if not is_admin(interaction):
         await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
         return
     players = load_players()
+    p = get_player(players, player)
+    if not p:
+        await interaction.response.send_message(f"⚠️ **{player}** not found.", ephemeral=True)
+        return
+    if tagname.lower() not in [t.lower() for t in p.get("tags", [])]:
+        await interaction.response.send_message(f"⚠️ **{player}** does not have the **{tagname}** tag.", ephemeral=True)
+        return
+    p["tags"] = [t for t in p.get("tags", []) if t.lower() != tagname.lower()]
+    if p.get("highlighted_tag", "") and p["highlighted_tag"].lower() == tagname.lower():
+        p["highlighted_tag"] = None
+    set_player(players, player, p)
+    embed = discord.Embed(title="🗑️ Tag Removed", color=discord.Color.orange())
+    embed.add_field(name="Player", value=player, inline=True)
+    embed.add_field(name="Tag", value=tagname, inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="highlightedtag", description="Choose one of your tags to highlight on the leaderboard.")
+@app_commands.describe(tagname="Tag to highlight")
+async def highlightedtag(interaction: discord.Interaction, tagname: str):
+    players = load_players()
+    p = next((pl for pl in players.values() if pl.get("discord_id") == interaction.user.id), None)
+    if not p:
+        await interaction.response.send_message("⚠️ Your Discord account is not linked. Use `/link` first.", ephemeral=True)
+        return
+    if tagname.lower() not in [t.lower() for t in p.get("tags", [])]:
+        await interaction.response.send_message(f"⚠️ You don't have the **{tagname}** tag.", ephemeral=True)
+        return
+    actual_tag = next(t for t in p["tags"] if t.lower() == tagname.lower())
+    p["highlighted_tag"] = actual_tag
+    set_player(players, p["name"], p)
+    embed = discord.Embed(title="⭐ Highlighted Tag Set", color=discord.Color.gold())
+    embed.add_field(name="Tag", value=actual_tag, inline=True)
+    embed.set_footer(text="This tag will show on the leaderboard!")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="removehighlightedtag", description="Remove your highlighted tag from the leaderboard.")
+async def removehighlightedtag(interaction: discord.Interaction):
+    players = load_players()
+    p = next((pl for pl in players.values() if pl.get("discord_id") == interaction.user.id), None)
+    if not p:
+        await interaction.response.send_message("⚠️ Your Discord account is not linked. Use `/link` first.", ephemeral=True)
+        return
+    if not p.get("highlighted_tag"):
+        await interaction.response.send_message("⚠️ You don't have a highlighted tag set.", ephemeral=True)
+        return
+    p["highlighted_tag"] = None
+    set_player(players, p["name"], p)
+    embed = discord.Embed(title="✅ Highlighted Tag Removed", color=discord.Color.orange())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="listtags", description="List all available tags.")
+async def listtags(interaction: discord.Interaction):
     meta = load_meta()
-    p1 = get_player(players, player1)
-    p2 = get_player(players, player2)
-    if not p1:
-        await interaction.response.send_message(f"⚠️ **{player1}** not found.", ephemeral=True)
+    if not meta["tags"]:
+        await interaction.response.send_message("No tags created yet.", ephemeral=True)
         return
-    if not p2:
-        await interaction.response.send_message(f"⚠️ **{player2}** not found.", ephemeral=True)
-        return
-
-    t1 = get_title(p1["elo"])
-    t2 = get_title(p2["elo"])
-    p1_win_chance = round(expected_score(p1["elo"], p2["elo"]) * 100, 1)
-    p2_win_chance = round(100 - p1_win_chance, 1)
-
-    embed = discord.Embed(
-        title="🌟 HIGHLIGHTED MATCH",
-        description=f"**{p1['name']}** vs **{p2['name']}**",
-        color=discord.Color.gold(),
-    )
-    embed.add_field(
-        name=f"{TITLE_EMOJIS.get(t1,'')} {p1['name']}",
-        value=f"{t1} - {p1['elo']} Elo\nWin chance: {p1_win_chance}%\n[Watch Live]({player1_stream})",
-        inline=True
-    )
-    embed.add_field(
-        name=f"{TITLE_EMOJIS.get(t2,'')} {p2['name']}",
-        value=f"{t2} - {p2['elo']} Elo\nWin chance: {p2_win_chance}%\n[Watch Live]({player2_stream})",
-        inline=True
-    )
-    embed.add_field(name="🕐 Scheduled", value=scheduled_time, inline=False)
-    embed.set_footer(text=f"Season {meta['season']} · Highlighted Match")
+    embed = discord.Embed(title="🏷️ Available Tags", color=discord.Color.blurple())
+    for key, t in meta["tags"].items():
+        embed.add_field(name=t["name"], value=t["description"], inline=False)
     await interaction.response.send_message(embed=embed)
 
 
