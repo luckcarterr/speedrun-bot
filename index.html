@@ -501,11 +501,16 @@ async function loadProfile(name) {
   const prov = p.matches < 10 ? ' ⚠️ Provisional' : '';
   const tags = (p.tags_detail||[]).map(t => `<span class="tag-pill ${t.highlighted?'highlighted':''}">${t.highlighted?'⭐ ':''}${t.name}</span>`).join('') || '';
 
+  const avatarHTML = p.discord_avatar
+    ? `<img src="${p.discord_avatar}" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);object-fit:cover;flex-shrink:0">`
+    : `<div class="profile-avatar">${p.name[0].toUpperCase()}</div>`;
+  const discordName = p.discord_username ? `<div style="color:var(--text2);font-size:0.82rem;margin-top:2px">@${p.discord_username}</div>` : "";
   document.getElementById('profile-hero-content').innerHTML = `
-    <div class="profile-avatar">${p.name[0].toUpperCase()}</div>
+    ${avatarHTML}
     <div class="profile-meta">
       <div class="profile-name">${p.name}</div>
-      <div class="profile-subtitle" style="color:${p.season_title_color}">${p.season_title_emoji} ${p.season_title}${prov} · Season #${p.season_rank} · ${streak}</div>
+      ${discordName}
+      <div class="profile-subtitle" style="color:${p.season_title_color};margin-top:4px">${p.season_title_emoji} ${p.season_title}${prov} · Season #${p.season_rank} · ${streak}</div>
       <div class="profile-tags" style="margin-top:10px">${tags}</div>
     </div>`;
 
