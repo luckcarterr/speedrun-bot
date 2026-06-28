@@ -3,11 +3,13 @@ from discord import app_commands
 import json
 import os
 import math
+import secrets
 
 # ── Bot setup ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
 intents.messages = True
+intents.guild_messages = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
@@ -812,11 +814,15 @@ async def link(interaction: discord.Interaction, player: str):
         return
 
     p["discord_id"] = interaction.user.id
+    p["discord_username"] = interaction.user.display_name
+    p["discord_avatar"] = str(interaction.user.display_avatar.url) if interaction.user.display_avatar else None
     set_player(players, player, p)
 
     embed = discord.Embed(title="✅ Account Linked", color=discord.Color.green())
     embed.add_field(name="Player", value=player, inline=True)
     embed.add_field(name="Discord", value=interaction.user.display_name, inline=True)
+    if interaction.user.display_avatar:
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -1247,6 +1253,30 @@ async def search(interaction: discord.Interaction, query: str):
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
+
+def pick_random_heist() -> str:
+    heists_file = "heists.json"
+    if not os.path.exists(heists_file):
+        return "Unknown Heist"
+    with open(heists_file) as f:
+        heists = json.load(f)
+    if not heists:
+        return "Unknown Heist"
+    # Use secrets for cryptographically equal randomness
+    return heists[secrets.randbelow(len(heists))]
+
+
+@client.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+    if message.channel.id == DUEL_RESULTS_CHANNEL:
+        heist = pick_random_heist()
+        await message.channel.send(
+            f"🎲 Heist selected for this duel: **{heist}**",
+            reference=message
+        )
+
 
 @client.event
 async def on_ready():
