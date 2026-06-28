@@ -19,12 +19,12 @@ SEASON_TITLES = [
 
 TITLE_EMOJIS = {
     "Master":      "👑",
-    "Ruby":        "💎",
-    "Diamond":     "🔷",
+    "Ruby":        "♦️",
+    "Diamond":     "💎",
     "Platinum":    "⚜️",
-    "Gold":        "🥇",
-    "Silver":      "🥈",
-    "Bronze":      "🥉",
+    "Gold":        "🟡",
+    "Silver":      "⚪",
+    "Bronze":      "🟤",
     "Grandmaster": "🌟",
 }
 
@@ -77,6 +77,8 @@ def enrich_player(p, season_rank, alltime_rank):
     p["tags"] = p.get("tags", [])
     p["wl_ratio"] = round(p["wins"] / p["losses"], 2) if p.get("losses", 0) > 0 else None
     p["alltime_wl_ratio"] = round(p["alltime_wins"] / p["alltime_losses"], 2) if p.get("alltime_losses", 0) > 0 else None
+    p["discord_avatar"] = p.get("discord_avatar") or ""
+    p["discord_username"] = p.get("discord_username") or ""
     return p
 
 @app.route("/api/data")
