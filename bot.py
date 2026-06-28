@@ -290,8 +290,12 @@ async def duel(interaction: discord.Interaction, player1: str, player2: str, pla
     set_player(players, player2, p2)
 
     recent = meta.get("recent_duels", [])
-    recent.insert(0, {"player1": p1["name"], "player2": p2["name"], "p1_time": player1_time, "p2_time": player2_time, "winner": winner, "loser": loser, "margin": round(time_diff, 2), "season": meta["season"]})
+    duel_record = {"player1": p1["name"], "player2": p2["name"], "p1_time": player1_time, "p2_time": player2_time, "winner": winner, "loser": loser, "margin": round(time_diff, 2), "season": meta["season"]}
+    recent.insert(0, duel_record)
     meta["recent_duels"] = recent[:5]
+    all_duels = meta.get("all_duels", [])
+    all_duels.insert(0, duel_record)
+    meta["all_duels"] = all_duels
     save_meta(meta)
 
     embed = discord.Embed(title="⚔️ Duel Result", color=discord.Color.gold())
@@ -1101,6 +1105,144 @@ async def listtags(interaction: discord.Interaction):
     embed = discord.Embed(title="🏷️ Available Tags", color=discord.Color.blurple())
     for key, t in meta["tags"].items():
         embed.add_field(name=t["name"], value=t["description"], inline=False)
+    await interaction.response.send_message(embed=embed)
+
+
+
+@tree.command(name="listplayers", description="[Admin] List all players and their linked Discord accounts.")
+async def listplayers(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    players = load_players()
+    if not players:
+        await interaction.response.send_message("No players in the system yet.", ephemeral=True)
+        return
+    embed = discord.Embed(title="👥 All Players", color=discord.Color.blurple())
+    lines = []
+    for p in sorted(players.values(), key=lambda x: x["name"].lower()):
+        linked = f"<@{p['discord_id']}>" if p.get("discord_id") else "❌ Not linked"
+        lines.append(f"**{p['name']}** — {linked}")
+    # Split into chunks if too long
+    chunk = ""
+    field_num = 1
+    for line in lines:
+        if len(chunk) + len(line) > 1000:
+            embed.add_field(name=f"Players ({field_num})", value=chunk, inline=False)
+            chunk = ""
+            field_num += 1
+        chunk += line + "\n"
+    if chunk:
+        embed.add_field(name=f"Players ({field_num})", value=chunk, inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="taginfo", description="Show which players have a specific tag.")
+@app_commands.describe(tagname="Tag to look up")
+async def taginfo(interaction: discord.Interaction, tagname: str):
+    meta = load_meta()
+    if tagname.lower() not in meta["tags"]:
+        await interaction.response.send_message(f"⚠️ Tag **{tagname}** does not exist.", ephemeral=True)
+        return
+    players = load_players()
+    tag_data = meta["tags"][tagname.lower()]
+    holders = [p["name"] for p in players.values() if tagname.lower() in [t.lower() for t in p.get("tags", [])]]
+    embed = discord.Embed(title=f"🏷️ {tag_data['name']}", color=discord.Color.gold())
+    embed.add_field(name="Description", value=tag_data["description"], inline=False)
+    embed.add_field(name="Players", value="\n".join(holders) if holders else "No players have this tag yet.", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="queueclear", description="[Admin] Clear the entire matchmaking queue.")
+async def queueclear(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("⛔ Administrator permissions required.", ephemeral=True)
+        return
+    meta = load_meta()
+    count = len(meta.get("queue", []))
+    meta["queue"] = []
+    save_meta(meta)
+    embed = discord.Embed(title="🗑️ Queue Cleared", color=discord.Color.orange())
+    embed.add_field(name="Players Removed", value=str(count), inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="head2head", description="Show the rivalry record between two players.")
+@app_commands.describe(player1="First player", player2="Second player")
+async def head2head(interaction: discord.Interaction, player1: str, player2: str):
+    players = load_players()
+    p1 = get_player(players, player1)
+    p2 = get_player(players, player2)
+    if not p1:
+        await interaction.response.send_message(f"⚠️ **{player1}** not found.", ephemeral=True)
+        return
+    if not p2:
+        await interaction.response.send_message(f"⚠️ **{player2}** not found.", ephemeral=True)
+        return
+    meta = load_meta()
+    all_duels = meta.get("all_duels", [])
+    h2h = [d for d in all_duels if
+           (d["player1"].lower() == player1.lower() and d["player2"].lower() == player2.lower()) or
+           (d["player1"].lower() == player2.lower() and d["player2"].lower() == player1.lower())]
+    p1_wins = sum(1 for d in h2h if d["winner"].lower() == player1.lower())
+    p2_wins = sum(1 for d in h2h if d["winner"].lower() == player2.lower())
+    embed = discord.Embed(title=f"⚔️ {p1['name']} vs {p2['name']} — Head to Head", color=discord.Color.gold())
+    embed.add_field(name=p1["name"], value=f"{p1_wins} wins", inline=True)
+    embed.add_field(name="Total Duels", value=str(len(h2h)), inline=True)
+    embed.add_field(name=p2["name"], value=f"{p2_wins} wins", inline=True)
+    if not h2h:
+        embed.set_footer(text="These two players have never dueled!")
+    else:
+        leader = p1["name"] if p1_wins > p2_wins else (p2["name"] if p2_wins > p1_wins else "Tied")
+        embed.set_footer(text=f"Leading: {leader}")
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="seasoninfo", description="Show info about the current season.")
+async def seasoninfo(interaction: discord.Interaction):
+    meta = load_meta()
+    players = load_players()
+    total_matches = sum(p["matches"] for p in players.values()) // 2
+    most_active = max(players.values(), key=lambda p: p["matches"], default=None)
+    embed = discord.Embed(title=f"📅 Season {meta['season']} Info", color=discord.Color.blurple())
+    embed.add_field(name="Season", value=str(meta["season"]), inline=True)
+    embed.add_field(name="Status", value="🟡 Registration" if meta.get("registration") else "🟢 Active", inline=True)
+    embed.add_field(name="Total Players", value=str(len(players)), inline=True)
+    embed.add_field(name="Total Duels", value=str(total_matches), inline=True)
+    if most_active:
+        embed.add_field(name="Most Active", value=f"{most_active['name']} ({most_active['matches']} matches)", inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="topwinrate", description="Leaderboard sorted by W/L ratio (min 5 matches).")
+async def topwinrate(interaction: discord.Interaction):
+    players = load_players()
+    meta = load_meta()
+    qualified = [p for p in players.values() if p["matches"] >= 5 and p["losses"] > 0]
+    qualified.sort(key=lambda p: p["wins"] / p["losses"], reverse=True)
+    if not qualified:
+        await interaction.response.send_message("No players with 5+ matches yet.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"📊 Top Win Rates — Season {meta['season']}", color=discord.Color.gold())
+    lines = []
+    for i, p in enumerate(qualified[:10]):
+        wl = f"{p['wins'] / p['losses']:.2f}"
+        lines.append(f"**#{i+1}** {p['name']} — {wl} W/L ({p['wins']}W/{p['losses']}L)")
+    embed.description = "\n".join(lines)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="search", description="Search for a player by name.")
+@app_commands.describe(query="Player name to search for")
+async def search(interaction: discord.Interaction, query: str):
+    players = load_players()
+    results = [p for p in players.values() if query.lower() in p["name"].lower()]
+    if not results:
+        await interaction.response.send_message(f"No players found matching **{query}**.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"🔍 Search: {query}", color=discord.Color.blurple())
+    lines = [f"**{p['name']}** — {p['elo']} Elo ({p['wins']}W/{p['losses']}L)" for p in results[:10]]
+    embed.description = "\n".join(lines)
     await interaction.response.send_message(embed=embed)
 
 
